@@ -1,0 +1,334 @@
+---
+title: "thesis-code-final"
+author: "Angela Gu"
+date: "2023-04-30"
+output:
+  html_document:
+    df_print: paged
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE, warning=FALSE}
+library(rlang)
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(readr)
+library(plotly)
+library(rvest)
+library(stringr)
+library(DT)
+library(tm)
+library(tidytext)
+library(wordcloud)
+library(reshape2)
+library(lubridate)
+library(leaflet)
+library(RColorBrewer)
+library(ggmap)
+library(ggthemes)
+library(maps)
+library(maptools)
+library(geojsonio)
+library(viridis)
+library(ggrepel)
+```
+
+### The Distribution of Different Crime Types by Specific Incident Catagory.
+```{r, message = FALSE,warning=FALSE}
+nypd_precinct <- read.csv("NYPD_Complaint_Data_Current__Year_To_Date_.csv")
+nypd<-read.csv("NYPD_Complaint_Data_Current__Year_To_Date - filtered.csv")
+nypd$CMPLNT_FR_DT <- mdy(nypd$CMPLNT_FR_DT)
+nypd$CMPLNT_FR_TM <- format(as.POSIXct(nypd$CMPLNT_FR_TM, format = "%H:%M:%S"),  "%H")
+nypd$CMPLNT_FR_YR <- format(as.POSIXct(nypd$CMPLNT_FR_DT, format = "%Y-%M-%D"),  "%Y")
+nypd$CMPLNT_FR_YRMT<-format(nypd$CMPLNT_FR_DT, "%Y-%m")
+nypd$VIC_SEX[nypd$VIC_SEX == 'F'] <- 'Female'
+nypd$VIC_SEX[nypd$VIC_SEX == 'M'] <- 'Male'
+nypd_precinct_OFNS_DESC <- sort(table(nypd_precinct$OFNS_DESC), decreasing = TRUE)
+nypd_precinct_OFNS_DESC <- data.frame(nypd_precinct_OFNS_DESC[nypd_precinct_OFNS_DESC > 5000])
+colnames(nypd_precinct_OFNS_DESC) <- c("Category", "Frequency")
+nypd_precinct_OFNS_DESC$Percentage <- (nypd_precinct_OFNS_DESC$Frequency / sum(nypd_precinct_OFNS_DESC$Frequency)) * 100
+nypd_precinct_OFNS_DESC
+```
+
+```{r, message = FALSE,warning=FALSE}
+ggplot(nypd_precinct_OFNS_DESC, aes(x = reorder(Category, Frequency), y = Frequency)) +
+    geom_bar(stat = "identity", position = position_dodge(),  fill="#ffa500") +
+    geom_text(aes(label = Frequency), vjust = .7, hjust = 1, position = position_dodge(width = 0.7), color = "#000000") +
+        ggtitle("Offense Catagory") +
+    xlab("Category") + ylab("Frequency") + 
+        coord_flip() + theme(axis.text.x=element_blank(), panel.background = element_rect(fill='transparent'),
+      plot.background = element_rect(fill='transparent', color=NA),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.background = element_rect(fill='transparent'),
+      legend.box.background = element_rect(fill='transparent'))
+```
+### Total Victims for 24 Hours (Classified with gender)
+```{r, message = FALSE,warning=FALSE}
+#Load the data
+nypd_precinct <- read.csv("NYPD_Complaint_Data_Current__Year_To_Date_.csv")
+nypd<-read.csv("NYPD_Complaint_Data_Current__Year_To_Date - filtered.csv")
+nypd$CMPLNT_FR_DT <- mdy(nypd$CMPLNT_FR_DT)
+nypd$CMPLNT_FR_TM <- format(as.POSIXct(nypd$CMPLNT_FR_TM, format = "%H:%M:%S"),  "%H")
+nypd$CMPLNT_FR_YR <- format(as.POSIXct(nypd$CMPLNT_FR_DT, format = "%Y-%M-%D"),  "%Y")
+nypd$CMPLNT_FR_YRMT<-format(nypd$CMPLNT_FR_DT, "%Y-%m")
+nypd$VIC_SEX[nypd$VIC_SEX == 'F'] <- 'Female'
+nypd$VIC_SEX[nypd$VIC_SEX == 'M'] <- 'Male'
+nypd<-nypd%>%
+  filter(CMPLNT_FR_YR <= 2021)
+plot_data<-nypd %>% 
+  filter(CRM_ATPT_CPTD_CD == 'COMPLETED')%>%
+  filter(VIC_SEX == "Female"|VIC_SEX=="Male")%>%
+  select(CMPLNT_FR_TM,VIC_SEX,CMPLNT_NUM) %>%
+  group_by(CMPLNT_FR_TM,VIC_SEX) %>%
+  count(CMPLNT_NUM)%>%
+  group_by(CMPLNT_FR_TM,VIC_SEX) %>%
+  summarise(Victum_num = sum(n))%>%
+  arrange(VIC_SEX,CMPLNT_FR_TM)
+plot_data<-plot_data%>% 
+  rename(Gender = VIC_SEX)
+plot1<-plot_data %>%
+  ggplot(.,aes(CMPLNT_FR_TM,Victum_num))+
+  theme_bw()+
+  geom_point(aes(color=Gender))+
+  scale_shape_discrete(guide=FALSE)+
+  labs(x="Hours", y="Total number of victims", title="Total number of victims across 24 hours")+
+  theme(plot.title=element_text(hjust=0.5))
+interactiveplot1<-ggplotly(plot1) %>%
+  layout(legend=list(orientation="h", x=0.2, y=-0.2), hovermode="x")
+interactiveplot1
+```
+```{r, message = FALSE,warning=FALSE}
+nypd<-read.csv("NYPD_Complaint_Data_Current__Year_To_Date - filtered.csv")
+nypd$CMPLNT_FR_DT = chartr("/", "-", nypd$CMPLNT_FR_DT)
+nypd$CMPLNT_FR_DT = as.Date(nypd$CMPLNT_FR_DT,format="%m-%d-%y")
+nypd$CMPLNT_FR_DTTM = paste(nypd$CMPLNT_FR_DT,nypd$CMPLNT_FR_TM)
+nypd$CMPLNT_FR_DTTM = as.POSIXct(nypd$CMPLNT_FR_DTTM, format  = "%Y-%m-%d  %H:%M:%S")
+
+df  <-  tibble::tibble(time  =  nypd$CMPLNT_FR_DTTM)
+
+library(dplyr)
+df_dummy <- df %>% 
+        mutate(hours = lubridate::hour(time),
+               dummy = 1)
+df_dummy
+
+nypd$hours = df_dummy$hours
+head(nypd)
+nypd$hours = as.numeric(nypd$hours)
+
+lm_table = 
+  nypd %>%
+  group_by(hours) %>% 
+  summarize(VIC_NUM_by_HOUR = n())
+nypd_lm = left_join(nypd, lm_table, by = "hours")
+
+library(splines)
+fit.ns = lm(VIC_NUM_by_HOUR~ns(hours, df = 4), data = nypd_lm)
+
+hours.grid <- seq(from = 0, to = 23, by = 1)
+pred.ns = predict(fit.ns,
+                  newdata = data.frame(hours=hours.grid), se = TRUE)
+pred.ns.df = data_frame(pred = pred.ns$fit,
+                        hours = hours.grid,
+                        upper = pred.ns$fit + 2*pred.ns$se,
+                        lower = pred.ns$fit - 2*pred.ns$se)
+p = ggplot(data = nypd_lm, aes(x = hours, y = VIC_NUM_by_HOUR)) +
+    geom_point(color  =  rgb(.2,  .4,  .2,  .5))
+p + geom_line(aes(x = hours, y = pred), data = pred.ns.df,
+              color = rgb(.8, .1, .1, 1)) +
+    geom_line(aes(x = hours, y = upper), data = pred.ns.df,
+              linetype = 2, col = "grey50") +
+    geom_line(aes(x = hours, y = lower), data = pred.ns.df,
+              linetype = 2, col = "grey50") + theme_bw()
+```
+
+### What Time Have the Highest Number of Crimes? (Classified with hour and week days)
+
+```{r, message = FALSE,warning=FALSE}
+nypd$day_by_day_in_a_week<- wday(nypd$CMPLNT_FR_DT, label=TRUE)
+return_by_hour <- function(x) {
+  return (as.numeric(strsplit(x,":")[[1]][1]))
+}
+nypd_by_hour <- nypd %>%
+  mutate(Hour = sapply(CMPLNT_FR_TM, return_by_hour)) %>%
+  group_by(day_by_day_in_a_week, Hour) %>%
+  summarize(count = n())
+nypd_by_hour$day_by_day_in_a_week <- factor(nypd_by_hour$day_by_day_in_a_week, level = c("Sun","Mon","Tue","Wed","Thu","Fri","Sat"))
+nypd_by_hour$Hour <- factor(nypd_by_hour$Hour, level = 0:23, label = c(0:23))
+nypd_by_hour %>%
+  ggplot(aes(x = Hour, y = day_by_day_in_a_week, fill = count)) + geom_raster(interpolate = TRUE) + 
+  coord_fixed(expand = FALSE) +
+  scale_fill_viridis(trans = 'reverse') + ggtitle("Number of Crime reported by Type in 2021")
+```
+
+```{r, message = FALSE,warning=FALSE}
+nypd$day_of_week<- wday(nypd$CMPLNT_FR_DT, label=TRUE)
+
+nypd_by_month <- nypd %>%
+  mutate(Month = format(as.Date(CMPLNT_FR_DT, "%m/%d/%Y"), "%B"), Hour = sapply(CMPLNT_FR_TM, return_by_hour)) %>%
+  group_by(Month, day_of_week, Hour) %>% 
+  summarize(count = n()) %>%
+  group_by(Month) %>%
+  mutate(norm = count/sum(count))
+nypd_by_month$day_of_week <- factor(nypd_by_month$day_of_week)
+nypd_by_month$Hour <- factor(nypd_by_month$Hour, level = 0:23)
+# Set order by Month
+nypd_by_month$Month <- factor(nypd_by_month$Month, level = c("January","February","March","April","May","June","July","August","September","October","November","December"))
+
+nypd_by_month %>% ggplot(aes(x = Hour, y = day_of_week, fill = count)) + 
+  geom_tile() +
+geom_raster(interpolate = FALSE) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 5)) +
+  labs(x = "Hour of Arrest (Local Time)", y = "Day of Week", title = "Reported Crime by Time Specifically Normalized by Month") + scale_fill_viridis(trans = 'reverse') +
+  facet_wrap(~ Month, nrow = 4)
+```
+### Total Suspects from 1969 to 2019 (Classified with race)
+
+```{r, message = FALSE,warning=FALSE}
+nypd_precinct <- read.csv("NYPD_Complaint_Data_Current__Year_To_Date_.csv")
+nypd<-read.csv("NYPD_Complaint_Data_Current__Year_To_Date - filtered.csv")
+nypd$CMPLNT_FR_DT <- mdy(nypd$CMPLNT_FR_DT)
+nypd$CMPLNT_FR_TM <- format(as.POSIXct(nypd$CMPLNT_FR_TM, format = "%H:%M:%S"),  "%H")
+nypd$CMPLNT_FR_YR <- format(as.POSIXct(nypd$CMPLNT_FR_DT, format = "%Y-%M-%D"),  "%Y")
+nypd$CMPLNT_FR_YRMT<-format(nypd$CMPLNT_FR_DT, "%Y-%m")
+plot_data2<-nypd %>% 
+  filter(CRM_ATPT_CPTD_CD == 'COMPLETED')%>%
+  filter(SUSP_RACE !="" )%>%
+  filter(CMPLNT_FR_YR != 2021&CMPLNT_FR_YR != 2020 & CMPLNT_FR_YR>=1969 & CMPLNT_FR_YR<= 2022)%>%
+  mutate(SUSP_RACE=case_when(SUSP_RACE=="BLACK"~"BLACK",
+        SUSP_RACE=="BLACK HISPANIC"~"BLACK HISPANIC",
+        SUSP_RACE=="WHITE"~"WHITE",
+        SUSP_RACE=="WHITE HISPANIC"~"WHITE HISPANIC",
+        SUSP_RACE=="ASIAN / PACIFIC ISLANDER"~"ASIAN / PACIFIC ISLANDER",
+        
+        TRUE  ~  "UNKNOWN"))%>%
+  select(CMPLNT_FR_YR,SUSP_RACE,CMPLNT_NUM) %>%
+  group_by(CMPLNT_FR_YR,SUSP_RACE) %>%
+  count(CMPLNT_NUM)%>%
+  group_by(CMPLNT_FR_YR,SUSP_RACE) %>%
+  summarise(SUSP_num = sum(n))%>%
+  arrange(CMPLNT_FR_YR,SUSP_RACE)
+fig <- plot_ly(plot_data2, x = ~CMPLNT_FR_YR, y = ~SUSP_num, type = 'scatter', mode = '', color = ~SUSP_RACE) 
+fig <- fig%>%layout(title = 'Total number of suspects each year',
+                    xaxis = list(title = 'Year'),
+                    yaxis = list (title = 'Total number of suspects'))
+fig
+```
+# Part B. Crimes of Boroughs
+### Total Crimes of Each Borough in 2021 (Classified with month)
+
+```{r, message = FALSE,warning=FALSE}
+nypd$CMPLNT_FR_YRMT<-format(nypd$CMPLNT_FR_DT, "%Y-%m")
+plot_data3<-nypd%>%
+  filter(nypd$CMPLNT_FR_YR == 2021)%>%
+  filter(BORO_NM!="")%>%
+  select(CMPLNT_FR_YRMT,BORO_NM,CMPLNT_NUM) %>%
+  group_by(CMPLNT_FR_YRMT,BORO_NM) %>%
+  count(CMPLNT_NUM)%>%
+  group_by(CMPLNT_FR_YRMT,BORO_NM) %>%
+  summarise(CMPLNT_num = sum(n))%>%
+  arrange(CMPLNT_FR_YRMT,BORO_NM)
+plot_data3$CMPLNT_num_norm <- 0
+plot_data3<-plot_data3%>%
+  mutate(CMPLNT_num_norm=case_when(BORO_NM=="BRONX"~round(CMPLNT_num/147.2, digits = 0),
+        BORO_NM=="BROOKLYN"~round(CMPLNT_num/273.6, digits = 0),
+        BORO_NM=="MANHATTAN"~round(CMPLNT_num/169.4, digits = 0),
+        BORO_NM=="QUEENS"~round(CMPLNT_num/240.5, digits = 0),
+        BORO_NM=="STATEN ISLAND"~round(CMPLNT_num/49.5, digits = 0)))
+plot3<-plot_ly(plot_data3,x = ~CMPLNT_num_norm, y = ~reorder(BORO_NM, (CMPLNT_num_norm)), type = 'bar', 
+                name = ~CMPLNT_FR_YRMT, color = ~CMPLNT_FR_YRMT) %>%
+      layout(yaxis = list(title = 'Count'), barmode = 'stack')
+plot3 <- plot3%>%layout(title = 'Total number of crimes of each borough in 2021 (Normalized by Population)',
+                    xaxis = list(title = 'Name of Borough'),
+                    yaxis = list (title = 'Number of crimes/Thousand people'))
+plot3
+```
+### Crimes in Each District
+
+```{r, message = FALSE,warning=FALSE}
+data<-nypd_precinct%>% filter(CRM_ATPT_CPTD_CD !="" )
+data <- data %>% group_by(ADDR_PCT_CD)%>%
+  count(CRM_ATPT_CPTD_CD)
+data1 <-data[which(data$CRM_ATPT_CPTD_CD == "ATTEMPTED"),]
+data_attempted <-select(data1, c('ADDR_PCT_CD','n'))
+names(data_attempted)[1] <- 'police_precinct'
+names(data_attempted)[2] <-'attempted'
+data2 <-data[which(data$CRM_ATPT_CPTD_CD == "COMPLETED"),]
+data_completed <-select(data2, c('ADDR_PCT_CD','n'))
+names(data_completed)[1] <- 'police_precinct'
+names(data_completed)[2] <-'completed'
+data_total <- merge(x=data_attempted, y=data_completed, by= "police_precinct")
+data_total$total_crime <- data_total$attempted + data_total$completed
+datajson <- geojsonio::geojson_read("https://opendata.arcgis.com/datasets/c35786feb0ac4d1b964f41f874f151c1_0.geojson", what = "sp")
+```
+
+```{r, message = FALSE,warning=FALSE}
+bins <- c(0, 2000, 4000, 6000, 8000, 10000, 12000, Inf)
+pal <- colorBin("YlOrRd", domain = data_total$total_crime, bins = bins)
+leaflet(datajson) %>%
+  addProviderTiles("MapBox", options = providerTileOptions(
+  id = "mapbox.light",
+  accessToken = Sys.getenv('MAPBOX_ACCESS_TOKEN')))%>%
+  addProviderTiles("Stamen.TonerLite") %>%
+  addPolygons(
+  fillColor = ~pal(data_total$total_crime),
+  weight = 2,
+  opacity = 1,
+  color = "white",
+  dashArray = "3",
+  fillOpacity = 0.7,
+  highlightOptions = highlightOptions(
+    weight = 5,
+    color = "#666",
+    dashArray = "",
+    fillOpacity = 0.7,
+    bringToFront = TRUE),
+    label=paste('Number of Total Crime:', data_total$total_crime,
+                 '; Number of Completed Crime:',data_total$completed,
+                 '; Number of Attempted Crime:',data_total$attempted,
+                 '; Police Precinct:',data_total$police_precinct))%>%
+  addLegend("bottomright", pal = pal, values = data_total$total_crime,
+    title = "Number of Total Crime",
+    opacity = 1
+  )
+```
+
+### Total Crimes of Each Borough (Classified with crime category)
+
+```{r, message = FALSE,warning=FALSE}
+new<-nypd %>%
+  filter(BORO_NM !="" )%>%
+  group_by(BORO_NM, LAW_CAT_CD) %>%
+  summarize(count = n()) %>%
+  ggplot(aes(x=count, y=reorder(BORO_NM, -(count)), fill=LAW_CAT_CD)) + 
+  geom_bar(stat="identity") + 
+  coord_flip() +
+  ggtitle("Number of Crime by Borough and its Crime Type") +
+  xlab("Percent") + ylab("Name of Borough") +
+  theme(
+      panel.background = element_rect(fill='transparent'),
+      plot.background = element_rect(fill='transparent', color=NA),
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      legend.background = element_rect(fill='transparent'),
+      legend.box.background = element_rect(fill='transparent')
+    )
+new
+```
+
+### The Distribution of Different Crime Types
+
+```{r, message = FALSE,warning=FALSE}
+nypd <- nypd %>% slice_sample(n = 100)
+pal = colorFactor(palette = c("#E41A1C", "#4DAF4A","#377EB8"), domain = nypd$LAW_CAT_CD)
+color = pal(nypd$LAW_CAT_CD)
+popup_info <- paste("Status of Crime:",nypd$CRM_ATPT_CPTD_CD,
+                 "Specific location of occurrence:",nypd$LOC_OF_OCCUR_DESC,
+                 "Patrol Borough:",nypd$PATROL_BORO)
+leaflet(nypd) %>%
+      addProviderTiles("Stamen.TonerLite") %>% #
+      addCircles(col=color,popup = popup_info)%>%
+      addLegend(pal = pal,values = nypd$LAW_CAT_CD, title = "Level of Offense")
+```
